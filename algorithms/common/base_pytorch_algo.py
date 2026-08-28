@@ -8,7 +8,7 @@ import lightning.pytorch as pl
 import torch
 import numpy as np
 from PIL import Image
-import wandb
+import swanlab
 import einops
 
 
@@ -104,7 +104,8 @@ class BasePytorchAlgo(pl.LightningModule, ABC):
         format: str = "mp4",
     ):
         """
-        Log video to wandb. WandbLogger in pytorch lightning does not support video logging yet, so we call wandb directly.
+        Log video to SwanLab. SwanLab currently supports GIF uploads, so non-GIF inputs
+        are converted to GIF before logging.
 
         Args:
             video: a numpy array or tensor, either in form (time, channel, height, width) or in the form
@@ -140,9 +141,22 @@ class BasePytorchAlgo(pl.LightningModule, ABC):
             video = np.clip(video, a_min=0, a_max=1) * 255
             video = video.astype(np.uint8)
 
+        import imageio
+        import tempfile
+
+        if format != "gif":
+            format = "gif"
+
+        with tempfile.NamedTemporaryFile(suffix=f".{format}", delete=False) as tmp_file:
+            if format == "gif":
+                frames = video if len(video.shape) == 4 else video[None]
+                imageio.mimsave(tmp_file.name, frames, fps=fps)
+            else:
+                raise ValueError(f"Unsupported SwanLab video format: {format}")
+
         self.logger.experiment.log(
             {
-                key: wandb.Video(video, fps=fps, format=format),
+                key: swanlab.Video(tmp_file.name),
             },
             step=self.global_step,
         )
@@ -156,13 +170,13 @@ class BasePytorchAlgo(pl.LightningModule, ABC):
         **kwargs: Any,
     ):
         """
-        Log image(s) using WandbLogger.
+        Log image(s) using SwanLabLogger.
         Args:
-            key: the name of the video.
+            key: the name of the image.
             image: a single image or a batch of images. If a batch of images, the shape should be (batch, channel, height, width).
             mean: optional, the mean to unnormalize image tensor, assuming unnormalized data is in [0, 1].
             std: optional, the std to unnormalize tensor, assuming unnormalized data is in [0, 1].
-            kwargs: optional, WandbLogger log_image kwargs, such as captions=xxx.
+            kwargs: optional, SwanLabLogger log_image kwargs, such as captions=xxx.
         """
         if isinstance(image, Image.Image):
             image = [image]

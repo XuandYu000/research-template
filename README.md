@@ -33,9 +33,9 @@ Run `conda create python=3.10 -n {your_env_name}` to create environment.
 Run `conda activate {your_env_name}` to activate this environment.
 Run `pip install -r requirements.txt` to install all dependencies.
 
-[Sign up](https://wandb.ai/site) a wandb account for cloud logging and checkpointing. In command line, run `wandb login` to login.
+[Sign up](https://swanlab.cn/) for a SwanLab account for cloud logging and checkpointing. In command line, run `swanlab login` to login.
 
-Then modify the wandb entity (account) in `configurations/config.yaml`.
+Then modify the swanlab workspace in `configurations/config.yaml`.
 
 If using VScode, we recommend installing [Black Formatter](https://marketplace.visualstudio.com/items?itemName=ms-python.black-formatter) for consistent auto-formatting with the original code.
 
@@ -79,7 +79,7 @@ Run a generic example experiment, with different algorithm:
 
 ## Modify for your own project
 
-First, create a new repository with this template. Make sure the new repository has the name you want to use for wandb
+First, create a new repository with this template. Make sure the new repository has the name you want to use for SwanLab
 logging.
 
 Add your method and baselines in `algorithms` following the `algorithms/README.md` as well as the example code in
@@ -115,19 +115,19 @@ One special note, if your want to define a new task for your experiment, (e.g. o
 We use [hydra](https://hydra.cc) instead of `argparse` to configure arguments at every code level. You can both write a static config in `configuration` folder or, at runtime,
 [override part of yur static config](https://hydra.cc/docs/tutorials/basic/your_first_app/simple_cli/) with command line arguments.
 
-For example, arguments `algorithm=example_classifier experiment.lr=1e-3` will override the `lr` variable in `configurations/experiment/example_classifier.yaml`. The argument `wandb.mode` will override the `mode` under `wandb` namesspace in the file `configurations/config.yaml`. There is also [nested override](https://github.com/facebookresearch/hydra/issues/2798): e.g. the option `algorithm/backbone=resnet` will set the field `algorithm.backbone` to the file `configurations/algorithm/backbone/resnet.yaml` (doesn't exist in the repo, just as an example).
+For example, arguments `algorithm=example_classifier experiment.lr=1e-3` will override the `lr` variable in `configurations/experiment/example_classifier.yaml`. The argument `swanlab.mode` will override the `mode` under `swanlab` namespace in the file `configurations/config.yaml`. There is also [nested override](https://github.com/facebookresearch/hydra/issues/2798): e.g. the option `algorithm/backbone=resnet` will set the field `algorithm.backbone` to the file `configurations/algorithm/backbone/resnet.yaml` (doesn't exist in the repo, just as an example).
 
 All static config and runtime override will be logged to cloud automatically.
 
 ## Resume a checkpoint & logging
 
-For machine learning experiments, all checkpoints and logs are logged to cloud automatically so you can resume them on another server. Simply append `resume={wandb_run_id}` to your command line arguments to resume it. The run_id can be founded in a url of a wandb run in wandb dashboard. By default, latest checkpoint in a run is stored indefinitely and earlier checkpoints in the run will be deleted after 5 days to save your storage.
+For machine learning experiments, all checkpoints and logs are logged to cloud automatically so you can resume them on another server. Simply append `resume={swanlab_run_id}` to your command line arguments to resume it. The run_id can be found in the URL of a SwanLab run in the SwanLab dashboard, or in the Environment tab of the experiment page. Checkpoints uploaded via `swanlab.save` are stored in the experiment's saved files.
 
-On the other hand, sometimes you may want to start a new run with different run id but still load a prior ckpt. This can be done by setting the `load={wandb_run_id / ckpt path}` flag.
+On the other hand, sometimes you may want to start a new run with different run id but still load a prior ckpt. This can be done by setting the `load={swanlab_run_id / ckpt path}` flag.
 
 ## Load a checkpoint to eval
 
-The argument `experiment.tasks=[task_name1,task_name2]` (note the `[]` brackets here needed) allows to select a sequence of tasks to execute, such as `training`, `validation` and `test`. Therefore, for validating a machine learning ckpt, you may run `python -m main load={your_wandb_run_id} experiment.tasks=[validation]`.
+The argument `experiment.tasks=[task_name1,task_name2]` (note the `[]` brackets here needed) allows to select a sequence of tasks to execute, such as `training`, `validation` and `test`. Therefore, for validating a machine learning ckpt, you may run `python -m main load={your_swanlab_run_id} experiment.tasks=[validation]`.
 
 More generally, the task names are the corresponding method names of your experiment class. For `BaseLightningExperiment`, we already defined three methods `training`, `validation` and `test` for you, but you can also define your own tasks by creating methods to your experiment class under intended task names.
 
@@ -137,15 +137,18 @@ We provide a useful debug flag which you can enable by `python main.py debug=Tru
 
 ## Hyperparameter Sweep
 
-Launch hyperparameter sweep via: `wandb sweep configurations/sweep/example_sweep.yaml`
-Then, launch sweep agents on different servers by running the command printed by the controller (e.g., `wandb agent <agent_id>`).
+SwanLab does not provide a native sweep CLI. Use [Hydra multirun](https://hydra.cc/docs/tutorials/basic/running_your_app/multi-run/) instead:
+
+`python -m main -m +name=example_sweep algorithm.lr=1e-3,1e-4 experiment.training.batch_size=32,64`
+
+See `configurations/sweep/example_sweep.yaml` for a reference sweep configuration.
 
 ## Add slurm clusters
 If you are from an academic institute, feel free to create a pull request to add your school's cluster to our repo.
 
 It's very easy to add your own slurm clusters via adding a yaml file in `configurations/cluster`. You can take a look
 at `configurations/cluster/mit_vision.yaml` for example. For multi-node training, `configurations/cluster/harvard_fas.yaml` is a good example.
-Some cluster has extra security and has login node offline, such as mit supercloud, the script will still automatically sync wandb logging to cloud with <1min latency if you set one flags following `configurations/cluster/mit_supercloud.yaml`. 
+Some cluster has extra security and has login node offline, such as mit supercloud, the script will still automatically sync SwanLab logging to cloud with <1min latency if you set one flags following `configurations/cluster/mit_supercloud.yaml`. Offline runs are synced via `python -m utils.swanlab_sync_loop` on the login node.
 
 
 ## Feature Roadmap

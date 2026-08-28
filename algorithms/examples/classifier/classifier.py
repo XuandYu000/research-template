@@ -62,8 +62,8 @@ class Classifier(BasePytorchAlgo):
         loss, accuraccy = self.forward(inputs, targets)
 
         """
-        Below we log with pytorch lightning's logger but you can directly import wandb and use 
-        `wandb.log` as well. The property self.global_step is the step you can give wandb. 
+        Below we log with pytorch lightning's logger but you can directly import swanlab and use
+        `swanlab.log` as well. The property self.global_step is the step you can give SwanLab.
         """
 
         if (batch_idx + 1) % 100 == 0:

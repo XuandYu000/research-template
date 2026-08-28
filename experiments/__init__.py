@@ -1,7 +1,8 @@
 from typing import Optional, Union
 from omegaconf import DictConfig
 import pathlib
-from lightning.pytorch.loggers.wandb import WandbLogger
+
+from swanlab.integration.pytorch_lightning import SwanLabLogger
 
 from .exp_base import BaseExperiment
 from .example_classification import ClassificationExperiment
@@ -15,12 +16,14 @@ exp_registry = dict(
 
 
 def build_experiment(
-    cfg: DictConfig, logger: Optional[WandbLogger] = None, ckpt_path: Optional[Union[str, pathlib.Path]] = None
+    cfg: DictConfig,
+    output_dir: Optional[Union[str, pathlib.Path]] = None,
+    ckpt_path: Optional[Union[str, pathlib.Path]] = None,
 ) -> BaseExperiment:
     """
     Build an experiment instance based on registry
     :param cfg: configuration file
-    :param logger: optional logger for the experiment
+    :param output_dir: output directory for the experiment
     :param ckpt_path: optional checkpoint path for saving and loading
     :return:
     """
@@ -30,4 +33,4 @@ def build_experiment(
             "Make sure you register it correctly in 'experiments/__init__.py' under the same name as yaml file."
         )
 
-    return exp_registry[cfg.experiment._name](cfg, logger, ckpt_path)
+    return exp_registry[cfg.experiment._name](cfg, output_dir, ckpt_path)

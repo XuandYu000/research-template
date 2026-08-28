@@ -134,8 +134,9 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
-# wandb logs
-/wandb/
+# SwanLab logs
+/swanlog/
+/.swanlab/
 
 # datasets
 *.hdf5
@@ -145,7 +146,7 @@ outputs/
 .hydra
 
 /slurm_logs/
-/.wandb_osh_command_dir/
+/.swanlab_sync_command_dir/
 
 checkpoints
 

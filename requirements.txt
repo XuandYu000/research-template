@@ -1,6 +1,6 @@
 torch
 torchvision
-wandb
+swanlab
 hydra-core
 pyyaml
 omegaconf
@@ -13,4 +13,3 @@ click
 moviepy
 imageio
 einops
-wandb-osh

@@ -7,7 +7,6 @@ and the `LICENSE` file to credit the author.
 
 from pathlib import Path
 from typing import Optional, Union
-from lightning.pytorch.loggers.wandb import WandbLogger
 import numpy as np
 import cv2
 from omegaconf import DictConfig
@@ -23,11 +22,11 @@ class HelloWorldExperiment(BaseExperiment):
     }
 
     def __init__(
-        self, cfg: DictConfig, logger: Optional[WandbLogger] = None, ckpt_path: Optional[Union[str, Path]] = None
+        self, cfg: DictConfig, output_dir: Optional[Union[str, Path]] = None, ckpt_path: Optional[Union[str, Path]] = None
     ) -> None:
         """cfg is defined in configurations/experiments/example_helloworld.yaml."""
         self.message = cfg.message
-        super().__init__(cfg, logger, ckpt_path)
+        super().__init__(cfg, output_dir, ckpt_path)
 
     def main(self):
         """
@@ -41,6 +40,9 @@ class HelloWorldExperiment(BaseExperiment):
         """
         if not self.algo:
             self.algo = self._build_algo()
+
+        if not self.logger:
+            self._build_logger()
 
         # most of your experiments should be here!
         print(f"Original Message: {self.message}")

@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from omegaconf import DictConfig
 
 import torchvision
@@ -42,4 +44,25 @@ class CIFAR10Dataset(torchvision.datasets.CIFAR10):
             train = False
         else:
             raise ValueError(f"split {split} not available for cifar 10s")
-        super().__init__(root=cfg.data_dir, train=train, download=True, transform=transform)
+
+        data_path = Path(cfg.data_dir)
+        if not data_path.is_absolute():
+            try:
+                from hydra.utils import get_original_cwd
+
+                base_dir = Path(get_original_cwd())
+            except ValueError:
+                # Hydra not initialized (e.g. unit tests); fall back to repo root.
+                base_dir = Path(__file__).resolve().parents[2]
+            data_path = base_dir / data_path
+
+        # torchvision expects `root` to contain `cifar-10-batches-py/`.
+        root = data_path.parent if data_path.name == self.base_folder else data_path
+        dataset_dir = root / self.base_folder
+        if not dataset_dir.exists():
+            raise FileNotFoundError(
+                f"CIFAR-10 dataset not found at {dataset_dir}. "
+                "Update dataset.data_dir in configurations/dataset/example_cifar10.yaml."
+            )
+
+        super().__init__(root=str(root), train=train, download=False, transform=transform)

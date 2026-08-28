@@ -11,11 +11,7 @@ import os
 from pathlib import Path
 
 import torch
-import wandb
 from omegaconf import DictConfig, OmegaConf
-
-
-from omegaconf import DictConfig
 
 from utils.print_utils import cyan
 from utils.distributed_utils import is_rank_zero
@@ -56,7 +52,28 @@ class BaseExperiment(ABC):
         self.algo = None
 
     def _build_logger(self):
-        self.logger = wandb
+        from swanlab.integration.pytorch_lightning import SwanLabLogger
+
+        swanlab_cfg = self.root_cfg.swanlab
+        if swanlab_cfg.mode == "disabled":
+            self.logger = None
+            return self.logger
+
+        resume = self.root_cfg.get("resume", None)
+        name = f"{self.root_cfg.name} ({self.output_dir.parent.name}/{self.output_dir.name})" if resume is None else None
+        init_kwargs = {
+            "project": swanlab_cfg.project,
+            "workspace": swanlab_cfg.workspace,
+            "experiment_name": name,
+            "save_dir": str(self.output_dir),
+            "mode": swanlab_cfg.mode,
+            "config": OmegaConf.to_container(self.root_cfg),
+        }
+        if resume:
+            init_kwargs["id"] = resume
+            init_kwargs["resume"] = "allow"
+
+        self.logger = SwanLabLogger(**init_kwargs)
         return self.logger
 
     def _build_algo(self):
@@ -181,9 +198,8 @@ class BasePytorchExperiment(BaseExperiment):
         validation_loader = self._build_validation_loader()
         test_loader = self._build_test_loader()
 
-        # define our custom x axis metric
-        wandb.define_metric("global_step")
-        wandb.define_metric("*", step_metric="global_step")
+        if not self.logger:
+            self._build_logger()
 
         global_steps = 0
         for e in range(self.cfg.training.epochs):
@@ -194,7 +210,7 @@ class BasePytorchExperiment(BaseExperiment):
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
-                self.logger.log_metrics({"loss": loss.item(), "global_steps": global_steps})
+                self.logger.log_metrics({"loss": loss.item(), "global_steps": global_steps}, step=global_steps)
 
 
 class BaseLightningExperiment(BasePytorchExperiment):
@@ -204,41 +220,55 @@ class BaseLightningExperiment(BasePytorchExperiment):
     """
 
     def _build_logger(self):
-        from utils.wandb_utils import OfflineWandbLogger, SpaceEfficientWandbLogger
+        from utils.swanlab_utils import OfflineSwanLabLogger, SpaceEfficientSwanLabLogger
 
         output_dir = Path(self.output_dir)
-        wandb_cfg = self.root_cfg.wandb
+        swanlab_cfg = self.root_cfg.swanlab
 
-        # Set up logging with wandb.
-        if wandb_cfg.mode != "disabled":
-            # If resuming, merge into the existing run on wandb.
+        # Set up logging with SwanLab.
+        if swanlab_cfg.mode != "disabled":
+            # If resuming, merge into the existing run on SwanLab.
             resume = self.root_cfg.get("resume", None)
             name = f"{self.root_cfg.name} ({output_dir.parent.name}/{output_dir.name})" if resume is None else None
 
             if "_on_compute_node" in self.root_cfg and self.root_cfg.cluster.is_compute_node_offline:
-                logger_cls = OfflineWandbLogger
+                logger_cls = OfflineSwanLabLogger
             else:
-                logger_cls = SpaceEfficientWandbLogger
+                logger_cls = SpaceEfficientSwanLabLogger
 
             self.logger = logger_cls(
                 name=name,
                 save_dir=str(output_dir),
-                offline=wandb_cfg.mode != "online",
-                project=wandb_cfg.project,
+                offline=swanlab_cfg.mode != "online",
+                mode=swanlab_cfg.mode,
+                project=swanlab_cfg.project,
+                workspace=swanlab_cfg.workspace,
                 log_model="all",
                 config=OmegaConf.to_container(self.root_cfg),
                 id=resume,
-                entity=wandb_cfg.entity,
             )
 
         return self.logger
+
+    def _resolve_trainer_parallelism(self):
+        from lightning.pytorch.strategies.ddp import DDPStrategy
+
+        devices = self.cfg.get("devices", 1)
+        if devices == "auto":
+            device_count = torch.cuda.device_count() if torch.cuda.is_available() else 0
+        elif isinstance(devices, int):
+            device_count = devices
+        else:
+            device_count = len(devices)
+
+        strategy = DDPStrategy(find_unused_parameters=False) if device_count > 1 else "auto"
+        return devices, strategy
 
     def training(self) -> None:
         """
         All training happens here
         """
         import lightning.pytorch as pl
-        from lightning.pytorch.strategies.ddp import DDPStrategy
         from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
 
         if not self.algo:
@@ -260,12 +290,14 @@ class BaseLightningExperiment(BasePytorchExperiment):
                 )
             )
 
+        devices, strategy = self._resolve_trainer_parallelism()
+
         trainer = pl.Trainer(
             accelerator="auto",
             logger=self.logger,
-            devices="auto",
+            devices=devices,
             num_nodes=self.cfg.num_nodes,
-            strategy=DDPStrategy(find_unused_parameters=False) if torch.cuda.device_count() > 1 else "auto",
+            strategy=strategy,
             callbacks=callbacks,
             gradient_clip_val=self.cfg.training.optim.gradient_clip_val,
             val_check_interval=self.cfg.validation.val_every_n_step,
@@ -295,7 +327,6 @@ class BaseLightningExperiment(BasePytorchExperiment):
         All validation happens here
         """
         import lightning.pytorch as pl
-        from lightning.pytorch.strategies.ddp import DDPStrategy
 
         if not self.algo:
             self._build_algo()
@@ -306,13 +337,14 @@ class BaseLightningExperiment(BasePytorchExperiment):
             self._build_logger()
 
         callbacks = []
+        devices, strategy = self._resolve_trainer_parallelism()
 
         trainer = pl.Trainer(
             accelerator="auto",
             logger=self.logger,
-            devices="auto",
+            devices=devices,
             num_nodes=self.cfg.num_nodes,
-            strategy=DDPStrategy(find_unused_parameters=False) if torch.cuda.device_count() > 1 else "auto",
+            strategy=strategy,
             callbacks=callbacks,
             limit_val_batches=self.cfg.validation.limit_batch,
             precision=self.cfg.validation.precision,
@@ -334,7 +366,6 @@ class BaseLightningExperiment(BasePytorchExperiment):
         All testing happens here
         """
         import lightning.pytorch as pl
-        from lightning.pytorch.strategies.ddp import DDPStrategy
 
         if not self.algo:
             self._build_algo()
@@ -345,13 +376,14 @@ class BaseLightningExperiment(BasePytorchExperiment):
             self.logger = self._build_logger()
 
         callbacks = []
+        devices, strategy = self._resolve_trainer_parallelism()
 
         trainer = pl.Trainer(
             accelerator="auto",
             logger=self.logger,
-            devices="auto",
+            devices=devices,
             num_nodes=self.cfg.num_nodes,
-            strategy=DDPStrategy(find_unused_parameters=False) if torch.cuda.device_count() > 1 else "auto",
+            strategy=strategy,
             callbacks=callbacks,
             limit_test_batches=self.cfg.test.limit_batch,
             precision=self.cfg.test.precision,

@@ -1,11 +1,11 @@
 """
-This repo is forked from [Boyuan Chen](https://boyuan.space/)'s research 
-template [repo](https://github.com/buoyancy99/research-template). 
-By its MIT license, you must keep the above sentence in `README.md` 
+This repo is forked from [Boyuan Chen](https://boyuan.space/)'s research
+template [repo](https://github.com/buoyancy99/research-template).
+By its MIT license, you must keep the above sentence in `README.md`
 and the `LICENSE` file to credit the author.
 
-Main file for the project. This will create and run new experiments and load checkpoints from wandb. 
-Borrowed part of the code from David Charatan and wandb.
+Main file for the project. This will create and run new experiments and load checkpoints from SwanLab.
+Borrowed part of the code from David Charatan and the original experiment-tracking integration.
 """
 
 import sys
@@ -21,6 +21,7 @@ from utils.print_utils import cyan
 from utils.distributed_utils import is_rank_zero
 from utils.ckpt_utils import download_latest_checkpoint, is_run_id
 from utils.cluster_utils import submit_slurm_job
+from utils.swanlab_utils import SYNC_COMMAND_DIR
 
 
 def run_local(cfg: DictConfig):
@@ -61,7 +62,7 @@ def run_local(cfg: DictConfig):
         load_id = None
 
     if load_id:
-        run_path = f"{cfg.wandb.entity}/{cfg.wandb.project}/{load_id}"
+        run_path = f"{cfg.swanlab.workspace}/{cfg.swanlab.project}/{load_id}"
         checkpoint_path = Path("outputs/downloaded") / run_path / "model.ckpt"
 
     # launch experiment
@@ -86,18 +87,19 @@ def run_slurm(cfg: DictConfig):
         project_root,
     )
 
-    if "cluster" in cfg and cfg.cluster.is_compute_node_offline and cfg.wandb.mode == "online":
+    if "cluster" in cfg and cfg.cluster.is_compute_node_offline and cfg.swanlab.mode == "online":
         print("Job submitted to a compute node without internet. This requires manual syncing on login node.")
-        osh_command_dir = project_root / ".wandb_osh_command_dir"
+        sync_command_dir = project_root / SYNC_COMMAND_DIR
 
-        osh_proc = None
-        # if click.confirm("Do you want us to run the sync loop for you?", default=True):
-        osh_proc = subprocess.Popen(["wandb-osh", "--command-dir", osh_command_dir])
-        print(f"Running wandb-osh in background... PID: {osh_proc.pid}")
-        print(f"To kill the sync process, run 'kill {osh_proc.pid}' in the terminal.")
+        sync_proc = None
+        sync_proc = subprocess.Popen(
+            [sys.executable, "-m", "utils.swanlab_sync_loop", str(sync_command_dir)],
+        )
+        print(f"Running SwanLab sync loop in background... PID: {sync_proc.pid}")
+        print(f"To kill the sync process, run 'kill {sync_proc.pid}' in the terminal.")
         print(
-            f"You can manually start a sync loop later by running the following:",
-            cyan(f"wandb-osh --command-dir {osh_command_dir}"),
+            "You can manually start a sync loop later by running the following:",
+            cyan(f"python -m utils.swanlab_sync_loop {sync_command_dir}"),
         )
 
     print(
@@ -125,30 +127,31 @@ def run_slurm(cfg: DictConfig):
 def run(cfg: DictConfig):
     if "_on_compute_node" in cfg and cfg.cluster.is_compute_node_offline:
         with open_dict(cfg):
-            if cfg.cluster.is_compute_node_offline and cfg.wandb.mode == "online":
-                cfg.wandb.mode = "offline"
+            if cfg.cluster.is_compute_node_offline and cfg.swanlab.mode == "online":
+                cfg.swanlab.mode = "offline"
 
     if "name" not in cfg:
         raise ValueError("must specify a name for the run with command line argument '+name=[name]'")
 
-    if not cfg.wandb.get("entity", None):
+    if not cfg.swanlab.get("workspace", None):
         raise ValueError(
-            "must specify wandb entity in 'configurations/config.yaml' or with command line"
-            " argument 'wandb.entity=[entity]' \n An entity is your wandb user name or group"
-            " name. This is used for logging. If you don't have an wandb account, please signup at https://wandb.ai/"
+            "must specify swanlab workspace in 'configurations/config.yaml' or with command line"
+            " argument 'swanlab.workspace=[workspace]' \n A workspace is your SwanLab user name or"
+            " team name. This is used for logging. If you don't have a SwanLab account, please"
+            " signup at https://swanlab.cn/"
         )
 
-    if cfg.wandb.project is None:
-        cfg.wandb.project = str(Path(__file__).parent.name)
+    if cfg.swanlab.project is None:
+        cfg.swanlab.project = str(Path(__file__).parent.name)
 
-    # If resuming or loading a wandb ckpt and not on a compute node, download the checkpoint.
+    # If resuming or loading a SwanLab ckpt and not on a compute node, download the checkpoint.
     resume = cfg.get("resume", None)
     load = cfg.get("load", None)
 
     if resume and load:
         raise ValueError(
-            "When resuming a wandb run with `resume=[wandb id]`, checkpoint will be loaded from the cloud"
-            "and `load` should not be specified."
+            "When resuming a SwanLab run with `resume=[swanlab run id]`, checkpoint will be loaded from the cloud"
+            " and `load` should not be specified."
         )
 
     if resume:
@@ -159,7 +162,7 @@ def run(cfg: DictConfig):
         load_id = None
 
     if load_id and "_on_compute_node" not in cfg:
-        run_path = f"{cfg.wandb.entity}/{cfg.wandb.project}/{load_id}"
+        run_path = f"{cfg.swanlab.workspace}/{cfg.swanlab.project}/{load_id}"
         download_latest_checkpoint(run_path, Path("outputs/downloaded"))
 
     if "cluster" in cfg and not "_on_compute_node" in cfg:

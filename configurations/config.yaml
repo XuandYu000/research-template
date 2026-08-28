@@ -7,10 +7,10 @@ defaults:
 
 debug: false # global debug flag will be passed into configuration of experiment, dataset and algorithm
 
-wandb:
-  entity: null # wandb account name / organization name [fixme]
-  project: null # wandb project name; if not provided, defaults to root folder name [fixme]
-  mode: online # set wandb logging to online, offline or dryrun
+swanlab:
+  workspace: XuZhiyu # swanlab workspace / team name (your SwanLab username)
+  project: demo_cifar10 # swanlab project name; if not provided, defaults to root folder name [fixme]
+  mode: online # set swanlab logging to online, offline, local, or disabled
 
-resume: null # wandb run id to resume logging and loading checkpoint from
-load: null # wanmdb run id containing checkpoint or a path to a checkpoint file 
+resume: null # swanlab run id to resume logging and loading checkpoint from
+load: null # swanlab run id containing checkpoint or a path to a checkpoint file
